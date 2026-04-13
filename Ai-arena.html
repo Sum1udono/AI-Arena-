@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Arena</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #2a2a3a;
+    --claude: #e8734a;
+    --gemini: #4a9eff;
+    --text: #e8e8f0;
+    --muted: #666680;
+    --input-bg: #1a1a25;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+  }
+
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 4px;
+    background: linear-gradient(90deg, var(--claude), var(--gemini));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #333;
+    transition: background 0.3s;
+  }
+  .status-dot.active { background: #44ff88; box-shadow: 0 0 8px #44ff88; }
+
+  .setup-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 24px;
+  }
+
+  .setup-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+
+  .key-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  @media (max-width: 600px) {
+    .key-grid { grid-template-columns: 1fr; }
+  }
+
+  .key-field label {
+    display: block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+  }
+
+  .key-field.claude label { color: var(--claude); }
+  .key-field.gemini label { color: var(--gemini); }
+
+  .key-field input {
+    width: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .key-field.claude input:focus { border-color: var(--claude); }
+  .key-field.gemini input:focus { border-color: var(--gemini); }
+
+  .arena {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0 24px 24px;
+    gap: 16px;
+  }
+
+  .chat-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  @media (max-width: 700px) {
+    .chat-columns { grid-template-columns: 1fr; }
+  }
+
+  .chat-panel {
+    background: var(--surface);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 300px;
+    max-height: 500px;
+  }
+
+  .panel-header {
+    padding: 12px 16px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px;
+    letter-spacing: 3px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .claude-panel .panel-header {
+    color: var(--claude);
+    border-bottom-color: rgba(232, 115, 74, 0.3);
+  }
+
+  .gemini-panel .panel-header {
+    color: var(--gemini);
+    border-bottom-color: rgba(74, 158, 255, 0.3);
+  }
+
+  .panel-icon {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+  .claude-panel .panel-icon { background: var(--claude); }
+  .gemini-panel .panel-icon { background: var(--gemini); }
+
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .message {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    animation: fadeIn 0.3s ease;
+  }
+
+  .message.user {
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .message.user::before {
+    content: '> ';
+    color: #44ff88;
+  }
+
+  .message.thinking {
+    color: var(--muted);
+    font-style: italic;
+    font-size: 13px;
+  }
+
+  .message.thinking::after {
+    content: '...';
+    animation: dots 1.2s infinite;
+  }
+
+  .message.error { color: #ff6b6b; font-size: 13px; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes dots {
+    0%, 20% { content: '.'; }
+    40% { content: '..'; }
+    60%, 100% { content: '...'; }
+  }
+
+  .input-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+
+  .input-row textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px;
+    resize: none;
+    outline: none;
+    min-height: 44px;
+    max-height: 120px;
+    line-height: 1.5;
+  }
+
+  .input-row textarea::placeholder { color: var(--muted); }
+
+  .send-btn {
+    background: linear-gradient(135deg, var(--claude), var(--gemini));
+    border: none;
+    border-radius: 6px;
+    width: 44px; height: 44px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+
+  .send-btn:hover { opacity: 0.85; }
+  .send-btn:active { transform: scale(0.95); }
+  .send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .send-btn svg { width: 18px; height: 18px; fill: white; }
+
+  .round-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-align: center;
+    padding: 8px 0 0;
+  }
+
+  .reaction-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 24px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .toggle {
+    position: relative;
+    width: 36px; height: 20px;
+    background: var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle.on { background: #44ff88; }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    background: white;
+    border-radius: 50%;
+    top: 3px; left: 3px;
+    transition: left 0.2s;
+  }
+  .toggle.on::after { left: 19px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">AI ARENA</div>
+  <div class="status-dot" id="statusDot"></div>
+  <span style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace;" id="statusText">OFFLINE</span>
+</header>
+
+<div class="setup-panel" id="setupPanel">
+  <div class="setup-title">// ENTER API KEYS</div>
+  <div class="key-grid">
+    <div class="key-field claude">
+      <label>CLAUDE API KEY</label>
+      <input type="password" id="claudeKey" placeholder="sk-ant-api03-..." autocomplete="off">
+    </div>
+    <div class="key-field gemini">
+      <label>GEMINI API KEY</label>
+      <input type="password" id="geminiKey" placeholder="AIzaSy..." autocomplete="off">
+    </div>
+  </div>
+</div>
+
+<div class="reaction-toggle">
+  <div class="toggle on" id="reactionToggle" onclick="toggleReaction()"></div>
+  <span>AIs react to each other's answers</span>
+</div>
+
+<div class="arena">
+  <div class="chat-columns">
+    <div class="chat-panel claude-panel">
+      <div class="panel-header">
+        <div class="panel-icon"></div>
+        CLAUDE
+      </div>
+      <div class="messages" id="claudeMessages">
+        <div class="message thinking" style="animation:none">Waiting for your question</div>
+      </div>
+    </div>
+    <div class="chat-panel gemini-panel">
+      <div class="panel-header">
+        <div class="panel-icon"></div>
+        GEMINI
+      </div>
+      <div class="messages" id="geminiMessages">
+        <div class="message thinking" style="animation:none">Waiting for your question</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="round-label" id="roundLabel">ROUND 0</div>
+
+  <div class="input-row">
+    <textarea id="userInput" placeholder="Ask both AIs anything..." rows="1"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"
+      oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
+      <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+  let reactMode = true;
+  let round = 0;
+  let sending = false;
+
+  // Watch keys to enable button
+  document.getElementById('claudeKey').addEventListener('input', checkKeys);
+  document.getElementById('geminiKey').addEventListener('input', checkKeys);
+
+  function checkKeys() {
+    const ck = document.getElementById('claudeKey').value.trim();
+    const gk = document.getElementById('geminiKey').value.trim();
+    const ready = ck.length > 10 && gk.length > 10;
+    document.getElementById('sendBtn').disabled = !ready;
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    if (ready) {
+      dot.classList.add('active');
+      txt.textContent = 'READY';
+    } else {
+      dot.classList.remove('active');
+      txt.textContent = 'OFFLINE';
+    }
+  }
+
+  function toggleReaction() {
+    reactMode = !reactMode;
+    const t = document.getElementById('reactionToggle');
+    t.classList.toggle('on', reactMode);
+  }
+
+  function addMessage(panelId, type, text) {
+    const panel = document.getElementById(panelId);
+    // Clear waiting message on first real content
+    if (panel.children.length === 1 && panel.children[0].classList.contains('thinking') && panel.children[0].style.animation === 'none') {
+      panel.innerHTML = '';
+    }
+    const div = document.createElement('div');
+    div.className = `message ${type}`;
+    div.textContent = text;
+    panel.appendChild(div);
+    panel.scrollTop = panel.scrollHeight;
+    return div;
+  }
+
+  function clearPanels() {
+    document.getElementById('claudeMessages').innerHTML = '';
+    document.getElementById('geminiMessages').innerHTML = '';
+  }
+
+  async function callClaude(prompt, systemPrompt) {
+    const key = document.getElementById('claudeKey').value.trim();
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: systemPrompt || 'You are Claude. Be direct, insightful, and a little personality-forward. Keep responses under 150 words.',
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'Claude API error');
+    }
+    const data = await response.json();
+    return data.content[0].text;
+  }
+
+  async function callGemini(prompt) {
+    const geminiKey = document.getElementById('geminiKey').value.trim();
+    const claudeKey = document.getElementById('claudeKey').value.trim();
+
+    // Route through Claude API to avoid CORS issues with Gemini
+    const systemPrompt = `You are a proxy that calls the Gemini API and returns only its response text.
+The user will give you a prompt and a Gemini API key.
+Make a fetch call to: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_KEY
+with the user's prompt, then return ONLY Gemini's response text, nothing else. No explanation, no preamble.`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': claudeKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: [{
+          role: 'user',
+          content: `Gemini API key: ${geminiKey}\n\nPrompt to send to Gemini: ${prompt}`
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'Gemini proxy error');
+    }
+    const data = await response.json();
+    return data.content[0].text;
+  }
+
+  async function sendMessage() {
+    if (sending) return;
+    const input = document.getElementById('userInput');
+    const question = input.value.trim();
+    if (!question) return;
+
+    sending = true;
+    round++;
+    input.value = '';
+    input.style.height = 'auto';
+    document.getElementById('sendBtn').disabled = true;
+    document.getElementById('roundLabel').textContent = `ROUND ${round}`;
+
+    clearPanels();
+
+    // Show user question in both panels
+    addMessage('claudeMessages', 'user', question);
+    addMessage('geminiMessages', 'user', question);
+
+    // Show thinking indicators
+    const cThink = addMessage('claudeMessages', 'thinking', 'Thinking');
+    const gThink = addMessage('geminiMessages', 'thinking', 'Thinking');
+
+    let claudeAnswer = '', geminiAnswer = '';
+
+    // Call both simultaneously
+    const [cResult, gResult] = await Promise.allSettled([
+      callClaude(question),
+      callGemini(question)
+    ]);
+
+    // Remove thinking
+    cThink.remove();
+    gThink.remove();
+
+    if (cResult.status === 'fulfilled') {
+      claudeAnswer = cResult.value;
+      addMessage('claudeMessages', 'ai', claudeAnswer);
+    } else {
+      addMessage('claudeMessages', 'error', '⚠ ' + cResult.reason.message);
+    }
+
+    if (gResult.status === 'fulfilled') {
+      geminiAnswer = gResult.value;
+      addMessage('geminiMessages', 'ai', geminiAnswer);
+    } else {
+      addMessage('geminiMessages', 'error', '⚠ ' + gResult.reason.message);
+    }
+
+    // Reaction round
+    if (reactMode && claudeAnswer && geminiAnswer) {
+      const crThink = addMessage('claudeMessages', 'thinking', 'Reading Gemini\'s answer');
+      const grThink = addMessage('geminiMessages', 'thinking', 'Reading Claude\'s answer');
+
+      const [cr, gr] = await Promise.allSettled([
+        callClaude(
+          `Gemini just answered the question "${question}" with this response:\n\n"${geminiAnswer}"\n\nReact to Gemini's answer briefly. Agree, disagree, or add something they missed. Be direct and a little spicy. Max 80 words.`,
+          'You are Claude in a live debate with Gemini. Be confident, sharp, and a little competitive but stay classy.'
+        ),
+        callGemini(
+          `Claude just answered the question "${question}" with this response:\n\n"${claudeAnswer}"\n\nReact to Claude's answer briefly. Agree, disagree, or add something they missed. Be direct and a little spicy. Max 80 words.`
+        )
+      ]);
+
+      crThink.remove();
+      grThink.remove();
+
+      if (cr.status === 'fulfilled') {
+        const div = addMessage('claudeMessages', 'ai', cr.value);
+        div.style.borderTop = '1px solid rgba(232,115,74,0.2)';
+        div.style.paddingTop = '10px';
+        div.style.marginTop = '4px';
+        div.style.color = '#ffb894';
+      } else {
+        addMessage('claudeMessages', 'error', '⚠ Reaction failed');
+      }
+
+      if (gr.status === 'fulfilled') {
+        const div = addMessage('geminiMessages', 'ai', gr.value);
+        div.style.borderTop = '1px solid rgba(74,158,255,0.2)';
+        div.style.paddingTop = '10px';
+        div.style.marginTop = '4px';
+        div.style.color = '#94c8ff';
+      } else {
+        addMessage('geminiMessages', 'error', '⚠ Reaction failed');
+      }
+    }
+
+    sending = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('userInput').focus();
+  }
+</script>
+</body>
+</html>
